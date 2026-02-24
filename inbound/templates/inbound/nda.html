@@ -149,6 +149,53 @@
     .footer .left { text-align: left; }
     .footer .center { text-align: center; }
     .footer .right { text-align: right; }
+
+    /* Footer bar: Requirements left + Next Req submit */
+    .footerbar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border-top: 1px solid #ddd;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+      z-index: 100;
+    }
+    .footerbar .req-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #333;
+    }
+    .footerbar .req-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 26px;
+      height: 26px;
+      padding: 0 6px;
+      background: #c00;
+      color: #fff;
+      font-size: 13px;
+      font-weight: bold;
+      border-radius: 50%;
+    }
+    .footerbar .btn-next {
+      padding: 10px 20px;
+      background: #2c2c2c;
+      color: #fff;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .footerbar .btn-next:hover { background: #1a1a1a; }
+    .page-wrap { padding-bottom: 60px; }
   </style>
 </head>
 
@@ -168,6 +215,8 @@
       </div>
     </div>
 
+    <form id="nda-form" method="post" action="{% url 'inbound:nda_form' contact_id %}">
+    {% csrf_token %}
     <div class="spacer-24"></div>
 
     <!-- Top line: #, Listing#, Listing Name (editable, pre-populated) -->
@@ -221,21 +270,20 @@
       <li>I agree that any breach of this agreement, directly or indirectly, will be harmful to the seller(s) and/or Tangent Brokerage.</li>
       <li>
         Any affiliation or relationship with a State or Federal Government or agency (including but not limited to Treasury Dept, Revenue Dept or IRS is disclosed
-        on this line <input type="text" class="w-320" name="govt_affiliation" value="" placeholder="" />); if line is blank w/o data, I hereby represent that “NO RELATIONSHIP” does exist or has existed.
+        on this line <input type="text" class="w-320" name="govt_affiliation" value="{{ govt_affiliation|default:'' }}" placeholder="" />); if line is blank w/o data, I hereby represent that “NO RELATIONSHIP” does exist or has existed.
       </li>
     </ol>
 
-    <form class="form" method="post" action="">
-      {% csrf_token %}
+    <div class="form">
       <p>
         Name (print clearly): x<input type="text" class="w-320" name="name" value="{{ name|default:'' }}" />
-        Signature: <input type="text" class="w-220" name="signature" value="" />
+        Signature: <input type="text" class="w-220" name="signature" value="{{ signature|default:'' }}" />
       </p>
       <p>
-        Street Address <input type="text" class="w-320" name="street_address" value="" />
-        City <input type="text" class="w-140" name="city" value="" />
-        State <input type="text" class="w-90" name="state" value="" />
-        Zip <input type="text" class="w-90" name="zip" value="" />
+        Street Address <input type="text" class="w-320" name="street_address" value="{{ street_address|default:'' }}" />
+        City <input type="text" class="w-140" name="city" value="{{ city|default:'' }}" />
+        State <input type="text" class="w-90" name="state" value="{{ state|default:'' }}" />
+        Zip <input type="text" class="w-90" name="zip" value="{{ zip|default:'' }}" />
       </p>
       <p>
         Email: x<input type="email" class="w-320" name="email" value="{{ email|default:'' }}" />
@@ -328,6 +376,8 @@
           </p>
         </div>
       </div>
+    </div>
+
     </form>
 
     <div class="footer">
@@ -336,6 +386,15 @@
       <div class="right">Ph: 630.862.5234</div>
     </div>
     </div>
+  </div>
+
+  <!-- Footer bar: Requirements left + Next Req submit -->
+  <div class="footerbar">
+    <div class="req-left">
+      Requirements left
+      <span class="req-badge">{{ requirements_count|default:0 }}</span>
+    </div>
+    <button type="submit" form="nda-form" class="btn-next">Next Req &gt;</button>
   </div>
 </body>
 </html>

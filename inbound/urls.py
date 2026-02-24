@@ -9,6 +9,7 @@ urlpatterns = [
     path('emails/<int:pk>/', views.email_detail, name='email_detail'),
     # NDA: list contacts that have contact_id + listing_id + phone
     path('nda/contacts/', views.nda_contacts_list, name='nda_contacts_list'),
-    # NDA page: /nda/<contact_id>/?listing_id=...&listing_name=...&created=...
+    # NDA page: /nda/<contact_id>/ = PDF; /nda/<contact_id>/form/ = HTML form with footer bar
     path('nda/<str:contact_id>/', views.nda_page, name='nda_page'),
+    path('nda/<str:contact_id>/form/', views.nda_form_page, name='nda_form'),
 ]

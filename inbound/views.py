@@ -13,7 +13,7 @@ from decimal import Decimal
 from email import policy
 
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 
 from .pdf_nda import fill_nda_pdf
 from django.views.decorators.http import require_http_methods
@@ -441,3 +441,104 @@ def nda_page(request, contact_id):
     resp = HttpResponse(pdf_bytes, content_type='application/pdf')
     resp['Content-Disposition'] = 'inline; filename="NDA.pdf"'
     return resp
+
+
+# Required NDA fields for "Requirements left" count (empty = 1 requirement)
+NDA_REQUIRED_FIELDS = ('name', 'email', 'phone', 'ref_id', 'listing_id', 'listing_name', 'signature')
+
+
+def _nda_form_context(contact_id, contact):
+    """Build context for NDA form page from contact (or empty)."""
+    if not contact:
+        return {
+            'contact_id': contact_id,
+            'contact': None,
+            'ref_id': '',
+            'listing_id': '',
+            'listing_name': '',
+            'name': '',
+            'email': '',
+            'phone': '',
+            'signature': '',
+            'street_address': '',
+            'city': '',
+            'state': '',
+            'zip': '',
+            'purchase_timeframe': '',
+            'amount_to_invest': '',
+            'lead_message': '',
+            'will_manage': '',
+            'other_deciders': '',
+            'industry_experience': '',
+            'govt_affiliation': '',
+            'govt_explain': '',
+            'requirements_count': len(NDA_REQUIRED_FIELDS),
+        }
+    extra = contact.raw_parsed or {}
+    data = {
+        'contact_id': contact_id,
+        'contact': contact,
+        'ref_id': contact.ref_id or '',
+        'listing_id': contact.listing_id or '',
+        'listing_name': contact.listing_name or '',
+        'name': contact.name or '',
+        'email': contact.email or '',
+        'phone': contact.phone or '',
+        'signature': extra.get('signature', ''),
+        'street_address': extra.get('street_address', ''),
+        'city': extra.get('city', ''),
+        'state': extra.get('state', ''),
+        'zip': extra.get('zip', ''),
+        'purchase_timeframe': contact.purchase_timeframe or '',
+        'amount_to_invest': contact.amount_to_invest or '',
+        'lead_message': contact.lead_message or '',
+        'will_manage': extra.get('will_manage', ''),
+        'other_deciders': extra.get('other_deciders', ''),
+        'industry_experience': extra.get('industry_experience', ''),
+        'govt_affiliation': extra.get('govt_affiliation', ''),
+        'govt_explain': extra.get('govt_explain', ''),
+    }
+    # Count how many required fields are still empty
+    count = 0
+    for key in NDA_REQUIRED_FIELDS:
+        if not (data.get(key) or '').strip():
+            count += 1
+    data['requirements_count'] = count
+    return data
+
+
+def nda_form_page(request, contact_id):
+    """
+    NDA as HTML form with footer bar: "Requirements left" + "Next Req" submit.
+    GET: show form with current contact data and requirements count.
+    POST: update InboundEmail with form data, redirect back so UI shows updated values.
+    """
+    contact = InboundEmail.objects.filter(ghl_contact_id=contact_id).order_by('-received_at').first()
+    if request.method == 'POST':
+        contact = contact or InboundEmail(
+            ghl_contact_id=contact_id,
+            from_address=request.POST.get('email', '') or 'nda-form@local',
+            subject='NDA form',
+        )
+        # Update from POST (only fields that exist on InboundEmail)
+        for key in (
+            'ref_id', 'listing_id', 'listing_name', 'name', 'email', 'phone',
+            'purchase_timeframe', 'amount_to_invest', 'lead_message',
+        ):
+            if key in request.POST:
+                setattr(contact, key, request.POST.get(key, '').strip())
+        if 'partner_name' in request.POST:
+            contact.lead_message = request.POST.get('partner_name', '').strip()
+        # Optional: store extra NDA fields in raw_parsed for pre-fill later
+        extra = contact.raw_parsed or {}
+        for key in ('signature', 'street_address', 'city', 'state', 'zip', 'will_manage', 'other_deciders', 'industry_experience', 'govt_affiliation', 'govt_explain'):
+            if key in request.POST:
+                extra[key] = request.POST.get(key, '').strip()
+        contact.raw_parsed = extra
+        contact.save()
+        return redirect('inbound:nda_form', contact_id=contact_id)
+    context = _nda_form_context(contact_id, contact)
+    if not contact and request.method == 'GET':
+        context['listing_id'] = request.GET.get('listing_id', '') or context.get('listing_id', '')
+        context['listing_name'] = request.GET.get('listing_name', '') or context.get('listing_name', '')
+    return render(request, 'inbound/nda.html', context)
