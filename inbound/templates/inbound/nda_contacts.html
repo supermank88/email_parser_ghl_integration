@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NDA contacts</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 1000px; margin: 2rem auto; padding: 0 1rem; }
+        h1 { margin-bottom: 1rem; }
+        .back { display: inline-block; margin-bottom: 1rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #ddd; }
+        th { background: #f5f5f5; font-weight: 600; }
+        tr:hover { background: #fafafa; }
+        a { color: #0066cc; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .listing-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .contact-id { font-family: monospace; font-size: 0.9rem; }
+        .empty { color: #666; padding: 2rem; }
+    </style>
+</head>
+<body>
+    <a href="{% url 'inbound:email_list' %}" class="back">← Back to emails</a>
+    <h1>NDA contacts</h1>
+    <p>Contacts with contact ID, listing ID, and phone (one NDA page per contact/listing).</p>
+    {% if nda_entries %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Contact ID</th>
+                    <th>Listing ID</th>
+                    <th class="listing-name">Listing name</th>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in nda_entries %}
+                <tr>
+                    <td class="contact-id">{{ e.contact_id }}</td>
+                    <td>{{ e.listing_id }}</td>
+                    <td class="listing-name" title="{{ e.listing_name }}">{{ e.listing_name|default:"—" }}</td>
+                    <td>{{ e.name|default:"—" }}</td>
+                    <td>{{ e.phone|default:"—" }}</td>
+                    <td>{{ e.created|default:"—" }}</td>
+                    <td><a href="{% url 'inbound:nda_page' e.contact_id %}?listing_id={{ e.listing_id|urlencode }}&listing_name={{ e.listing_name|urlencode }}&created={{ e.created|urlencode }}">View NDA</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="empty">No NDA contacts yet. Contacts need contact ID, listing ID, and phone to appear here.</p>
+    {% endif %}
+</body>
+</html>

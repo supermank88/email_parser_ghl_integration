@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ email.subject|default:"(no subject)" }}</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        .meta { background: #f5f5f5; padding: 1rem; border-radius: 6px; margin-bottom: 1rem; }
+        .meta p { margin: 0.25rem 0; }
+        .meta strong { display: inline-block; min-width: 4rem; }
+        .body { border: 1px solid #eee; padding: 1rem; border-radius: 6px; min-height: 100px; }
+        .body.html { background: #fff; }
+        .attachments { margin-top: 1rem; font-size: 0.9rem; color: #666; }
+        .back { display: inline-block; margin-bottom: 1rem; }
+        .parsed.section { margin-bottom: 1.5rem; }
+        .parsed.section h2 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+        .parsed-table { width: 100%; max-width: 500px; border-collapse: collapse; }
+        .parsed-table th, .parsed-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid #eee; text-align: left; }
+        .parsed-table th { font-weight: 600; color: #444; width: 40%; }
+        .parsed-at { font-size: 0.85rem; color: #666; margin-top: 0.5rem; }
+        .lead-message { margin-top: 1rem; }
+        .lead-message-text { white-space: pre-wrap; font-family: inherit; font-size: 0.9rem; margin: 0.25rem 0 0; padding: 0.75rem; background: #f9f9f9; border-radius: 4px; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <a href="{% url 'inbound:email_list' %}" class="back">← Back to list</a>
+
+    <div class="meta">
+        <p><strong>From:</strong> {{ email.from_address }}</p>
+        <p><strong>To:</strong> {{ email.to_address }}</p>
+        {% if email.cc %}<p><strong>Cc:</strong> {{ email.cc }}</p>{% endif %}
+        <p><strong>Subject:</strong> {{ email.subject|default:"(no subject)" }}</p>
+        <p><strong>Received:</strong> {{ email.received_at|date:"F j, Y H:i:s" }}</p>
+    </div>
+
+    {% if email.parsed_at %}
+    <div class="parsed section">
+        <h2>Extracted lead information</h2>
+        <table class="parsed-table">
+            <tr><th>Lead source</th><td>{{ email.lead_source|default:"—" }}</td></tr>
+            <tr><th>Listing ID</th><td>{{ email.listing_id|default:"—" }}</td></tr>
+            <tr><th>Listing name</th><td>{{ email.listing_name|default:"—" }}</td></tr>
+            <tr><th>Listing profit</th><td>{% if email.listing_profit is not None %}{{ email.listing_profit|floatformat:0 }}{% else %}—{% endif %}</td></tr>
+            <tr><th>Name</th><td>{{ email.name|default:"—" }}</td></tr>
+            <tr><th>Email</th><td>{{ email.email|default:"—" }}</td></tr>
+            <tr><th>Phone</th><td>{{ email.phone|default:"—" }}</td></tr>
+            <tr><th>Purchase timeframe</th><td>{{ email.purchase_timeframe|default:"—" }}</td></tr>
+            <tr><th>Amount to invest</th><td>{{ email.amount_to_invest|default:"—" }}</td></tr>
+            <tr><th>Ref ID</th><td>{{ email.ref_id|default:"—" }}</td></tr>
+            <tr><th>Title</th><td>{{ email.email_title|default:"—" }}</td></tr>
+            <tr><th>Original email Message-ID</th><td><code>{{ email.original_email_message_id|default:"—" }}</code></td></tr>
+            <tr><th>Received at</th><td>{{ email.received_at|date:"F j, Y H:i:s" }}</td></tr>
+            {% if email.ghl_contact_id %}<tr><th>GHL contact ID</th><td><code>{{ email.ghl_contact_id }}</code></td></tr>{% endif %}
+        </table>
+        {% if email.lead_message %}
+        <div class="lead-message">
+            <strong>Lead message</strong>
+            <pre class="lead-message-text">{{ email.lead_message }}</pre>
+        </div>
+        {% endif %}
+        <p class="parsed-at">Parsed {{ email.parsed_at|date:"F j, Y H:i:s" }}</p>
+    </div>
+    {% endif %}
+
+    <div class="body {% if email.html_body %}html{% endif %}">
+        {% if email.html_body %}
+            {{ email.html_body|safe }}
+        {% elif email.text_body %}
+            <pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">{{ email.text_body }}</pre>
+        {% else %}
+            <em>No body content.</em>
+        {% endif %}
+    </div>
+
+    {% if email.attachment_info %}
+    <div class="attachments">
+        <strong>Attachments:</strong>
+        {% for att in email.attachment_info %}
+            {{ att.name }} ({{ att.size }} bytes){% if not forloop.last %}, {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</body>
+</html>

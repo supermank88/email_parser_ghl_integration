@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Received Emails</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+        h1 { margin-bottom: 1rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #ddd; }
+        th { background: #f5f5f5; font-weight: 600; }
+        tr:hover { background: #fafafa; }
+        a { color: #0066cc; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .subject { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .empty { color: #666; padding: 2rem; }
+    </style>
+</head>
+<body>
+    <h1>Received Emails (SendGrid Inbound)</h1>
+    {% if emails %}
+        <table>
+            <thead>
+                <tr>
+                    <th>From</th>
+                    <th>To</th>
+                    <th class="subject">Subject</th>
+                    <th>Received</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for email in emails %}
+                <tr>
+                    <td>{{ email.from_address }}</td>
+                    <td>{{ email.to_address|truncatewords:5 }}</td>
+                    <td class="subject">{{ email.subject|default:"(no subject)" }}</td>
+                    <td>{{ email.received_at|date:"M j, Y H:i" }}</td>
+                    <td><a href="{% url 'inbound:email_detail' email.pk %}">View</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="empty">No emails received yet. Send an email to your SendGrid Inbound Parse address to see it here.</p>
+    {% endif %}
+</body>
+</html>

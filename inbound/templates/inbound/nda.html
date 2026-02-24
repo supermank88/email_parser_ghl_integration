@@ -1,0 +1,341 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NDA — {{ listing_name|default:listing_id|default:contact_id }}</title>
+
+  <style>
+    body {
+      margin: 0;
+      background: #f5f5f5;
+      color: #000;
+      font-family: "Times New Roman", Times, serif;
+      font-size: 12pt;
+      line-height: 1.35;
+    }
+
+    .page-wrap {
+      display: flex;
+      min-height: 100vh;
+      background: #fff;
+    }
+    .blue-bar {
+      width: 12px;
+      min-width: 12px;
+      background: #1e3a5f;
+    }
+    .page {
+      flex: 1;
+      max-width: 820px;
+      margin: 0;
+      padding: 24px 24px 36px;
+    }
+
+    .header {
+      margin-bottom: 18px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .header .logo-img {
+      height: 48px;
+      width: auto;
+      display: block;
+    }
+    .header .contact-block {
+      text-align: right;
+    }
+    .header .company {
+      font-weight: bold;
+      font-size: 14pt;
+      margin-bottom: 4px;
+    }
+    .header .line {
+      margin: 0;
+    }
+
+    .spacer-24 { height: 24px; }
+    .spacer-16 { height: 16px; }
+    .spacer-12 { height: 12px; }
+
+    .blanks-line {
+      margin: 10px 0 16px;
+      white-space: pre-wrap;
+    }
+
+    .title {
+      text-align: center;
+      font-weight: bold;
+      text-decoration: underline;
+      margin: 14px 0 14px;
+    }
+
+    .para {
+      margin: 0 0 10px;
+      text-align: justify;
+    }
+
+    .clauses {
+      margin: 0 0 10px 0;
+      padding-left: 18px;
+      list-style: none;
+      counter-reset: clause;
+    }
+    .clauses li {
+      margin: 0 0 8px 0;
+      text-align: justify;
+    }
+    .clauses li::before {
+      content: counter(clause) ". ";
+      counter-increment: clause;
+    }
+    .clauses li .emphasis {
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    /* Form lines */
+    .form {
+      margin-top: 14px;
+    }
+    .form p {
+      margin: 0 0 8px;
+    }
+
+    /* Underline blanks like Word */
+    .form input[type="text"],
+    .form input[type="email"],
+    .form select {
+      font-family: inherit;
+      font-size: inherit;
+      border: none;
+      border-bottom: 1px solid #000;
+      background: transparent;
+      padding: 0 4px;
+      margin: 0 2px;
+      vertical-align: baseline;
+    }
+    .form input:focus, .form select:focus { outline: none; border-bottom-color: #1e3a5f; }
+    .w-60  { width: 60px; min-width: 60px; }
+    .w-90  { width: 90px; min-width: 90px; }
+    .w-140 { width: 140px; min-width: 140px; }
+    .w-220 { width: 220px; min-width: 220px; }
+    .w-320 { width: 320px; min-width: 220px; }
+    .w-420 { width: 420px; min-width: 280px; }
+
+    /* “Choose an item.” should look like plain text with optional dropdown */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px 24px;
+      margin: 8px 0;
+    }
+    .two-col .col p { margin: 0 0 6px; }
+
+    .footer {
+      margin-top: 24px;
+      padding-top: 12px;
+      border-top: 1px solid #ccc;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 10pt;
+    }
+    .footer .left { text-align: left; }
+    .footer .center { text-align: center; }
+    .footer .right { text-align: right; }
+  </style>
+</head>
+
+<body>
+  <div class="page-wrap">
+    <div class="blue-bar"></div>
+    <div class="page">
+    <!-- Header: logo left, contact right (reference image) -->
+    <div class="header">
+      <img src="{% static 'inbound/tangent_brokerage_logo.png' %}" alt="Tangent Brokerage" class="logo-img" />
+      <div class="contact-block">
+        <div class="company">Tangent Brokerage</div>
+        <p class="line">Glen Ellyn, IL 60137</p>
+        <p class="line">Tel: (630) 862-5234</p>
+        <p class="line">Fax: (630) 273-7794</p>
+        <p class="line">Info@TangentBrokerage.com</p>
+      </div>
+    </div>
+
+    <div class="spacer-24"></div>
+
+    <!-- Top line: #, Listing#, Listing Name (editable, pre-populated) -->
+    <div class="blanks-line">
+      #<input type="text" class="w-90" name="ref_id" value="{{ ref_id|default:contact_id|default:'' }}" placeholder="" />
+      Listing#<input type="text" class="w-90" name="listing_id" value="{{ listing_id|default:'' }}" placeholder="" />
+      Listing Name: <input type="text" class="w-420" name="listing_name" value="{{ listing_name|default:'' }}" placeholder="" />
+    </div>
+
+    <div class="title">Confidentiality &amp; Non-Disclosure Agreement and Buyer Information</div>
+
+    <p class="para">
+      I agree on behalf of myself, or an authorized representative or direct agent of the company listed below,
+      Tangent Brokerage will be furnishing information to me in secrecy and confidence pertaining to companies
+      they represent for sale. This information includes, but is not limited to, information relating to each
+      company’s profitability, financial condition, operations, and prospects.
+    </p>
+
+    <div class="spacer-12"></div>
+
+    <p class="para"><strong>In consideration for obtaining data, I agree:</strong></p>
+
+    <ol class="clauses">
+      <li>All information will be used solely for the deliberation of whether to proceed with an acquisition of the company.</li>
+      <li>I will not contact the seller(s), seller’s customers, seller’s vendors, or seller’s employees, directly or indirectly.</li>
+      <li>
+        I understand all inquiries, investigations, negotiations, offers to purchase, and/or letters of intent must be made through Tangent Brokerage.
+        I acknowledge that Tangent Brokerage represents the seller(s) and will be paid Seller Fee during Closing of the sale. I agree that should I buy,
+        lease, or otherwise come into possession business assets or the businesses shown to me by Tangent Brokerage, I will not interfere or deny Tangent
+        Brokerage’s right to fees under its agreement with the seller(s).
+      </li>
+      <li>
+        I understand that the seller(s) have supplied proprietary information relevant to my review of the acquisition opportunity, and I agree that the
+        Tangent Brokerage makes no representation or warranty as to its accuracy or completeness.
+      </li>
+      <li>
+        I (we) understand: <span class="emphasis">EMPLOYEES are -NOT AWARE- owner is selling this business.</span> Employee awareness will harm both the seller and the seller’s business.
+        I (we) <span class="emphasis">WILL NOT mention “selling the business”</span> while visiting Seller’s place of business at any time.
+      </li>
+      <li>
+        If I decide not to purchase this business, I will dispose of all information furnished without making or keeping copies of the information to
+        Tangent Brokerage. If I purchase this business, I will obtain clearance that Tangent Brokerage was paid in full by Seller by the closing date or
+        agree to be held personally liable and or a lien and UCC filing on my newly purchased entity for the unpaid commission plus all reasonable attorney
+        fees to be added to the judgement.
+      </li>
+      <li>
+        All information received will be held in strict confidence and will not be disclosed to any person or agency not listed below who are directly involved
+        in the evaluation of the potential acquisition; all parties that will receive a copy of the confidential material, including your attorney or accountant
+        will be bound by the same terms that you are by your signature and so advised by yourself.
+      </li>
+      <li>I agree that any breach of this agreement, directly or indirectly, will be harmful to the seller(s) and/or Tangent Brokerage.</li>
+      <li>
+        Any affiliation or relationship with a State or Federal Government or agency (including but not limited to Treasury Dept, Revenue Dept or IRS is disclosed
+        on this line <input type="text" class="w-320" name="govt_affiliation" value="" placeholder="" />); if line is blank w/o data, I hereby represent that “NO RELATIONSHIP” does exist or has existed.
+      </li>
+    </ol>
+
+    <form class="form" method="post" action="">
+      {% csrf_token %}
+      <p>
+        Name (print clearly): x<input type="text" class="w-320" name="name" value="{{ name|default:'' }}" />
+        Signature: <input type="text" class="w-220" name="signature" value="" />
+      </p>
+      <p>
+        Street Address <input type="text" class="w-320" name="street_address" value="" />
+        City <input type="text" class="w-140" name="city" value="" />
+        State <input type="text" class="w-90" name="state" value="" />
+        Zip <input type="text" class="w-90" name="zip" value="" />
+      </p>
+      <p>
+        Email: x<input type="email" class="w-320" name="email" value="{{ email|default:'' }}" />
+        Cell#: <input type="text" class="w-140" name="phone" value="{{ phone|default:'' }}" />
+      </p>
+
+      <p>
+        <strong>I Will Manage Business:</strong>
+        <select name="will_manage" class="w-140">
+          <option value="">Choose an item.</option>
+          <option value="Remotely" {% if will_manage == 'Remotely' %}selected{% endif %}>Remotely</option>
+          <option value="Semi Actively" {% if will_manage == 'Semi Actively' %}selected{% endif %}>Semi Actively</option>
+          <option value="Fully Actively" {% if will_manage == 'Fully Actively' %}selected{% endif %}>Fully Actively</option>
+        </select>
+      </p>
+
+      <p>
+        <strong>Other Deciders:</strong>
+        <select name="other_deciders" class="w-140">
+          <option value="">Choose an item.</option>
+          <option value="Wife">Wife</option>
+          <option value="Bus Partner">Bus Partner</option>
+          <option value="Angel Investor">Angel Investor</option>
+          <option value="Family">Family</option>
+        </select>
+      </p>
+
+      <p>
+        <strong>I have Industry experience:</strong>
+        <select name="industry_experience" class="w-90">
+          <option value="">Choose an item.</option>
+          <option value="Yes" {% if industry_experience == 'Yes' %}selected{% endif %}>Yes</option>
+          <option value="No" {% if industry_experience == 'No' %}selected{% endif %}>No</option>
+          <option value="Maybe">Maybe</option>
+        </select>
+        (If yes) years' <input type="text" class="w-60" name="years" value="" />
+        <strong>Timeframe to purchase:</strong>
+        <select name="timeframe" class="w-140">
+          <option value="">Choose an item.</option>
+          <option value="ASAP" {% if purchase_timeframe == 'ASAP' or purchase_timeframe == 'asap' %}selected{% endif %}>ASAP</option>
+          <option value="0-3 months" {% if purchase_timeframe == '0-3 months' %}selected{% endif %}>0-3 months</option>
+          <option value="3-6 months" {% if purchase_timeframe == '3-6 months' %}selected{% endif %}>3-6 months</option>
+          <option value="6-12 months" {% if purchase_timeframe == '6-12 months' %}selected{% endif %}>6-12 months</option>
+          <option value="1 year+" {% if purchase_timeframe == '1 year+' %}selected{% endif %}>1 year+</option>
+        </select>
+      </p>
+
+      <div class="two-col">
+        <div class="col">
+          <p>Liquid Assets (cash, stocks, bonds) $
+            <select name="liquid_assets" class="w-140">
+              <option value="">Choose an item.</option>
+              <option value="Under $100K" {% if amount_to_invest == 'Under $100K' %}selected{% endif %}>Under $100K</option>
+              <option value="$100K-$250K" {% if amount_to_invest == '$100K-$250K' %}selected{% endif %}>$100K-$250K</option>
+              <option value="$250K-$500K" {% if amount_to_invest == '$250K-$500K' %}selected{% endif %}>$250K-$500K</option>
+              <option value="$500K-$1M" {% if amount_to_invest == '$500K-$1M' %}selected{% endif %}>$500K-$1M</option>
+              <option value="$1M+" {% if amount_to_invest == '$1M+' %}selected{% endif %}>$1M+</option>
+            </select>
+          </p>
+          <p>401K, SEP, SIMPLE, Roth, IRA $ <input type="text" class="w-140" name="retirement_401k" value="" /></p>
+          <p>I have a Partner, Partner's Name: <input type="text" class="w-220" name="partner_name" value="{{ lead_message|default:'' }}" /></p>
+          <p><strong>I'm using:</strong>
+            <select name="using" class="w-140">
+              <option value="">Choose an item.</option>
+              <option value="My own Cash">My own Cash</option>
+              <option value="Bank funds">Bank funds</option>
+              <option value="Broker">Broker</option>
+              <option value="Attorney">Attorney</option>
+              <option value="CPA">CPA</option>
+            </select>
+          </p>
+        </div>
+        <div class="col">
+          <p>Real Estate $
+            <select name="real_estate" class="w-90">
+              <option value="">Choose an item.</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </p>
+          <p>Funds for this business: $
+            <select name="funds_for_business" class="w-140">
+              <option value="">Choose an item.</option>
+              <option value="Under $100K" {% if amount_to_invest == 'Under $100K' %}selected{% endif %}>Under $100K</option>
+              <option value="$100K-$250K" {% if amount_to_invest == '$100K-$250K' %}selected{% endif %}>$100K-$250K</option>
+              <option value="$250K-$500K" {% if amount_to_invest == '$250K-$500K' %}selected{% endif %}>$250K-$500K</option>
+              <option value="$500K-$1M" {% if amount_to_invest == '$500K-$1M' %}selected{% endif %}>$500K-$1M</option>
+              <option value="$1M+" {% if amount_to_invest == '$1M+' %}selected{% endif %}>$1M+</option>
+            </select>
+          </p>
+        </div>
+      </div>
+    </form>
+
+    <div class="footer">
+      <div class="left">Info@TangentBrokerage.com</div>
+      <div class="center">Fax: 630.273-7794</div>
+      <div class="right">Ph: 630.862.5234</div>
+    </div>
+    </div>
+  </div>
+</body>
+</html>
