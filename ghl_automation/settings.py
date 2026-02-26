@@ -98,8 +98,27 @@ GHL_CUSTOM_FIELD_LEAD_SOURCE = os.environ.get('GHL_CUSTOM_FIELD_LEAD_SOURCE', ''
 GHL_CUSTOM_FIELD_PURCHASE_TIMEFRAME = os.environ.get('GHL_CUSTOM_FIELD_PURCHASE_TIMEFRAME', '')
 GHL_CUSTOM_FIELD_AMOUNT_TO_INVEST = os.environ.get('GHL_CUSTOM_FIELD_AMOUNT_TO_INVEST', '')
 GHL_CUSTOM_FIELD_LEAD_MESSAGE = os.environ.get('GHL_CUSTOM_FIELD_LEAD_MESSAGE', '')
-# Media storage folder for signed NDAs (create in GHL if it doesn't exist)
-GHL_SIGNED_NDA_FOLDER = os.environ.get('GHL_SIGNED_NDA_FOLDER', 'Signed_NDA')
+# File Upload / Text custom field ID for signed NDA (stores link to PDF)
+GHL_CUSTOM_FIELD_SIGNED_NDA = os.environ.get('GHL_CUSTOM_FIELD_SIGNED_NDA', '')
+# Public base URL for NDA links (PDF stored on platform, link saved to GHL)
+NDA_PUBLIC_BASE_URL = os.environ.get('NDA_PUBLIC_BASE_URL', 'http://50.16.97.238').rstrip('/')
+
+# Logging: show INFO for inbound app (helps debug NDA upload flow)
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'inbound': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+    },
+}
 
 # Allow larger inbound parse payloads (SendGrid "Send Raw" / big emails + attachments)
 # Increase if you receive very large emails (e.g. 25 * 1024 * 1024 for 25 MB)

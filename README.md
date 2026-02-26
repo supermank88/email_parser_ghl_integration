@@ -56,6 +56,9 @@ For local testing with SendGrid, use a tunnel (e.g. [ngrok](https://ngrok.com/))
 | `python manage.py migrate` | Run database migrations |
 | `python manage.py runserver` | Start the development server |
 | `python manage.py add_nda_form_fields` | Add fillable form fields to the NDA PDF template (see below) |
+| `python manage.py fix_received_at_timezone` | Fix naive `received_at` timestamps for correct EST display |
+| `python manage.py verify_ghl_contact_fields <id>` | Fetch GHL contact and show custom fields (debug NDA upload) |
+| `python manage.py list_ghl_custom_fields` | List location custom fields and IDs (find Signed NDA field) |
 
 ### Updating the NDA PDF template
 
@@ -103,14 +106,21 @@ Parsed data is stored on the same `InboundEmail` record and shown on the detail 
 
 Extend `process_inbound_email()` in `inbound/views.py` to implement your GHL automation (e.g. create tasks, update contacts).
 
-## Signed NDA → GHL Media Storage
+## Signed NDA → GHL Contact
 
-When a user saves a signed NDA (clicks "Next Req" in the NDA viewer), the filled PDF is:
+When a user saves a signed NDA (clicks "Next Req" in the NDA viewer):
 
-1. Saved locally to `inbound/static/inbound/nda_signed/`
-2. Uploaded to **GHL Media Storage** in the `Signed_NDA` folder
+1. The filled PDF is saved locally to `inbound/static/inbound/nda_signed/` (you can switch to S3 later)
+2. The **link** to the PDF is saved to the contact's custom field in GHL (public URL: `NDA_PUBLIC_BASE_URL/static/inbound/nda_signed/<filename>.pdf`)
+3. The tag **NDA_Signed** is added to the contact
 
-To enable uploads, ensure `GHL_API_KEY` and `GHL_LOCATION_ID` are set in `.env`. The folder name can be overridden with `GHL_SIGNED_NDA_FOLDER` (default: `Signed_NDA`). If the folder does not exist, it is created automatically.
+**Setup:** In GHL, create a custom field for contacts (e.g. "Signed NDA") that can store a URL (Text or Website type). Get the field ID via `python manage.py list_ghl_custom_fields` and set `GHL_CUSTOM_FIELD_SIGNED_NDA` in `.env`. Set `NDA_PUBLIC_BASE_URL` to your public server URL (e.g. `http://50.16.97.238:8000` if Django runs on port 8000) so the PDF link is accessible. PDFs are served via `/inbound/nda/signed/<filename>`.
+
+**Where to find the PDF in GHL:**
+1. Go to **Contacts** (left sidebar) → click the contact
+2. Scroll down to the **Custom Fields** section — the Signed NDA field contains the link to the PDF
+
+**Verify:** Run `python manage.py verify_ghl_contact_fields <contact_id>`. If the Signed NDA field shows the URL, it succeeded.
 
 ## Security notes
 

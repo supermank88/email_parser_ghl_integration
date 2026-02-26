@@ -271,129 +271,87 @@ def sync_contact_to_ghl(email):
     return None
 
 
-def _get_signed_nda_folder_id(api_key, location_id):
+NDA_SIGNED_TAG = "NDA_Signed"
+
+
+def add_contact_tag(contact_id, tag):
     """
-    Get or create the Signed_NDA folder in GHL Media Storage.
-    Returns folder ID (str) or None on failure.
-    """
-    # List root media files/folders (try common endpoints)
-    for path in [f"/medias/files?locationId={location_id}", f"/medias?locationId={location_id}"]:
-        status, data = _ghl_request(api_key, "GET", path)
-        if status == 200 and data is not None:
-            break
-    if status != 200 or data is None:
-        logger.warning("GHL list media failed: status=%s", status)
-        return None
+    Add a tag to a GHL contact.
 
-    # Response may have 'medias', 'files', or 'folders'
-    items = data.get("medias") or data.get("files") or data.get("folders") or []
-    if isinstance(items, dict):
-        items = items.get("medias") or items.get("files") or items.get("folders") or []
-    if not isinstance(items, list):
-        items = []
-
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        name = (item.get("name") or item.get("title") or "").strip()
-        folder_name = getattr(settings, "GHL_SIGNED_NDA_FOLDER", None) or "Signed_NDA"
-        if name == folder_name:
-            fid = item.get("id") or item.get("_id")
-            if fid:
-                return str(fid)
-
-    # Create folder
-    folder_name = getattr(settings, "GHL_SIGNED_NDA_FOLDER", None) or "Signed_NDA"
-    create_body = {"locationId": location_id, "name": folder_name}
-    status, data = _ghl_request(api_key, "POST", "/medias/folder", create_body)
-    if status not in (200, 201) or data is None:
-        logger.warning("GHL create folder failed: status=%s body=%s", status, str(data)[:300] if data else "")
-        return None
-
-    folder = data.get("folder") or data.get("media") or data
-    fid = folder.get("id") if isinstance(folder, dict) else None
-    if fid:
-        logger.info("Created GHL folder %s", folder_name)
-        return str(fid)
-    return None
-
-
-def upload_nda_to_ghl_media(filepath, filename, contact_id, contact):
-    """
-    Upload a signed NDA PDF to GHL Media Storage in the Signed_NDA folder.
-
-    Args:
-        filepath: Path to the PDF file on disk
-        filename: Display filename (e.g. nda_signed_listing_contact_ts.pdf)
-        contact_id: GHL contact ID (for logging)
-        contact: InboundEmail instance (for location_id via ghl_contact_id lookup if needed)
-
-    Returns:
-        str: GHL media/file ID on success, None on failure.
+    Returns True on success, False otherwise.
     """
     api_key = getattr(settings, "GHL_API_KEY", None) or ""
-    location_id = getattr(settings, "GHL_LOCATION_ID", None) or ""
-    if not api_key or not location_id:
-        logger.info("GHL media upload skipped: GHL_API_KEY or GHL_LOCATION_ID not set")
-        return None
+    if not api_key:
+        logger.info("GHL add tag skipped: GHL_API_KEY not set")
+        return False
 
-    path = Path(filepath)
-    if not path.exists() or not path.is_file():
-        logger.warning("NDA file not found for GHL upload: %s", filepath)
-        return None
-
-    folder_id = _get_signed_nda_folder_id(api_key, location_id)
-    if not folder_id:
-        logger.warning("Could not get/create Signed_NDA folder; uploading to root")
-
-    url = f"{GHL_API_BASE}/medias/upload-file"
+    url = f"{GHL_API_BASE}/contacts/{contact_id}/tags"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Version": "2021-07-28",
+        "Content-Type": "application/json",
         "Accept": "application/json",
     }
-    # Do NOT set Content-Type; requests will set multipart/form-data with boundary
+    body = {"tags": [tag]}
 
     try:
-        with open(path, "rb") as f:
-            files = {"file": (filename, f, "application/pdf")}
-            data = {"locationId": location_id, "name": filename}
-            if folder_id:
-                data["folderId"] = folder_id
-            resp = requests.post(url, headers=headers, files=files, data=data, timeout=30)
-    except OSError as e:
-        logger.exception("Failed to read NDA file for GHL upload: %s", e)
-        return None
+        resp = requests.post(url, headers=headers, json=body, timeout=15)
     except requests.RequestException as e:
-        logger.exception("GHL media upload request failed: %s", e)
-        return None
+        logger.exception("GHL add tag request failed: %s", e)
+        return False
 
-    if resp.status_code not in (200, 201):
-        logger.warning(
-            "GHL media upload failed: status=%s body=%s",
-            resp.status_code,
-            resp.text[:500] if resp.text else "",
-        )
-        return None
+    if resp.status_code in (200, 201):
+        logger.info("Added tag %r to GHL contact %s", tag, contact_id)
+        return True
 
-    try:
-        body = resp.json()
-    except Exception:
-        body = {}
+    logger.warning("GHL add tag failed: status=%s body=%s", resp.status_code, resp.text[:300] if resp.text else "")
+    return False
 
-    media_id = (
-        (body.get("media") or {}).get("id")
-        or (body.get("file") or {}).get("id")
-        or body.get("id")
-    )
-    if media_id:
+
+def set_nda_link_on_contact(filename, contact_id, location_id):
+    """
+    Store the NDA link on the GHL contact's custom field.
+    PDF is stored on platform (static/S3); we save the public URL to GHL.
+    """
+    logger.info("[NDA] set_nda_link_on_contact called: contact_id=%s file=%s", contact_id, filename)
+    api_key = getattr(settings, "GHL_API_KEY", None) or ""
+    field_id = getattr(settings, "GHL_CUSTOM_FIELD_SIGNED_NDA", None) or ""
+    base_url = getattr(settings, "NDA_PUBLIC_BASE_URL", "") or "http://50.16.97.238"
+    base_url = str(base_url).rstrip("/")
+    if not api_key or not location_id:
+        logger.info("GHL NDA link skipped: GHL_API_KEY or GHL_LOCATION_ID not set")
+        return False
+    if not field_id:
         logger.info(
-            "Uploaded signed NDA to GHL Media (Signed_NDA): contact=%s file=%s media_id=%s",
-            contact_id,
-            filename,
-            media_id,
+            "GHL NDA link skipped: GHL_CUSTOM_FIELD_SIGNED_NDA not set "
+            "(create custom field in GHL for Signed NDA link)"
         )
-        return str(media_id)
+        return False
 
-    logger.warning("GHL upload returned success but no media id: %s", body)
-    return None
+    # Public URL via Django view (works without static file serving)
+    nda_url = f"{base_url}/inbound/nda/signed/{filename}"
+    payload = {"customFields": [{"id": field_id, "value": nda_url}]}
+    status, data = _ghl_request(api_key, "PUT", f"/contacts/{contact_id}?locationId={location_id}", payload)
+    if status in (200, 201):
+        logger.info("Set NDA link on GHL contact %s: %s", contact_id, nda_url)
+        return True
+    logger.warning("GHL contact update failed: status=%s body=%s", status, str(data)[:300] if data else "")
+    return False
+
+
+def on_nda_signed(contact_id, contact, filepath, filename):
+    """
+    Called when a signed NDA is saved. Stores link to PDF on the contact and adds NDA_Signed tag.
+    PDF is stored on platform (static/S3); we save the public URL to GHL custom field.
+    """
+    logger.info("[NDA] on_nda_signed called: contact_id=%s file=%s", contact_id, filename)
+    location_id = getattr(settings, "GHL_LOCATION_ID", None) or ""
+    if not location_id:
+        logger.warning("GHL_LOCATION_ID not set; skipping NDA post-sign actions")
+        return
+
+    # 1. Set NDA link on contact's custom field (PDF stored on platform)
+    set_nda_link_on_contact(filename, contact_id, location_id)
+
+    # 2. Add tag NDA_Signed
+    add_contact_tag(contact_id, NDA_SIGNED_TAG)

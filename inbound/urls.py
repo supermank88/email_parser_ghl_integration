@@ -13,4 +13,5 @@ urlpatterns = [
     path('nda/<str:contact_id>/', views.nda_page, name='nda_page'),
     path('nda/<str:contact_id>/pdf/', views.nda_pdf_stream, name='nda_pdf'),
     path('nda/<str:contact_id>/save/', views.nda_save, name='nda_save'),
+    path('nda/signed/<str:filename>', views.nda_signed_pdf, name='nda_signed_pdf'),
 ]

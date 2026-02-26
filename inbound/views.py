@@ -13,10 +13,12 @@ from datetime import datetime
 from decimal import Decimal
 from email import policy
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.utils import timezone as django_tz
 
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, RawPostDataException
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
@@ -27,7 +29,7 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 from .models import InboundEmail
 from .parsing import parse_email_with_deepseek
-from .ghl import sync_contact_to_ghl, upload_nda_to_ghl_media
+from .ghl import sync_contact_to_ghl, on_nda_signed
 
 logger = logging.getLogger(__name__)
 
@@ -186,12 +188,17 @@ def sendgrid_inbound(request):
 
         has_body = bool(payload.get('text') or payload.get('html'))
 
-        # When SendGrid "Send Raw" is enabled, the raw MIME may be the entire request.body (not in POST)
-        if not has_body and getattr(request, 'body', b''):
-            raw_body = request.body
-            if isinstance(raw_body, bytes) and len(raw_body) > 0:
-                # Only treat as raw MIME if it looks like an email (avoid parsing multipart form as MIME)
-                if raw_body.lstrip().startswith((b'From ', b'Received:', b'Content-Type:', b'Message-ID:', b'MIME-Version:', b'Return-Path:')):
+        # When SendGrid "Send Raw" is enabled, the raw MIME may be the entire request.body (not in POST).
+        # Skip if multipart: POST/FILES already consumed the body, so request.body would raise.
+        raw_body = b''
+        if not has_body and 'multipart/form-data' not in (request.content_type or ''):
+            try:
+                raw_body = request.body or b''
+            except RawPostDataException:
+                pass  # Body already consumed by POST/FILES
+        if not has_body and isinstance(raw_body, bytes) and len(raw_body) > 0:
+            # Only treat as raw MIME if it looks like an email (avoid parsing multipart form as MIME)
+            if raw_body.lstrip().startswith((b'From ', b'Received:', b'Content-Type:', b'Message-ID:', b'MIME-Version:', b'Return-Path:')):
                     try:
                         msg = email_module.message_from_bytes(raw_body, policy=policy.default)
                         for part in msg.walk():
@@ -233,12 +240,16 @@ def sendgrid_inbound(request):
             list(request.FILES.keys()),
         )
         if not has_body:
+            try:
+                body_len = len(request.body) if request.body else 0
+            except RawPostDataException:
+                body_len = 0
             logger.warning(
                 'No text/html in webhook. POST keys: %s; FILES keys: %s; body_len=%s. '
                 'SendGrid: use parsed fields (text/html) or send raw MIME in POST "email" or as request.body; ensure DATA_UPLOAD_MAX_MEMORY_SIZE is large enough.',
                 list(request.POST.keys()),
                 list(request.FILES.keys()),
-                len(getattr(request, 'body', b'') or b''),
+                body_len,
             )
 
         # Process the email here (e.g. save to DB, trigger GHL automation).
@@ -383,11 +394,20 @@ def nda_contacts_list(request):
         if key in seen:
             continue
         seen.add(key)
+        # Format created time in EST
+        if e.received_at:
+            est = ZoneInfo('America/New_York')
+            dt = e.received_at
+            if dt.tzinfo is None:
+                dt = django_tz.make_aware(dt, django_tz.utc)
+            created_str = dt.astimezone(est).strftime('%Y-%m-%d %H:%M EST')
+        else:
+            created_str = ''
         nda_entries.append({
             'contact_id': e.ghl_contact_id,
             'listing_id': e.listing_id,
             'listing_name': e.listing_name or '',
-            'created': e.received_at.strftime('%Y-%m-%d') if e.received_at else '',
+            'created': created_str,
             'name': e.name or '',
             'phone': e.phone or '',
             'email': e.email or '',
@@ -434,6 +454,7 @@ def _save_signed_nda_to_static(contact_id, contact):
     Generate filled NDA PDF from contact and save to inbound/static/inbound/nda_signed/.
     Returns the saved file path (relative) or None on failure.
     """
+    logger.info("[NDA] _save_signed_nda_to_static started: contact_id=%s", contact_id)
     extra = (contact.raw_parsed or {}) if contact else {}
     try:
         pdf_bytes = fill_nda_pdf(
@@ -480,11 +501,12 @@ def _save_signed_nda_to_static(contact_id, contact):
     try:
         filepath.write_bytes(pdf_bytes)
         logger.info("Saved signed NDA to %s", filepath)
-        # Upload to GHL Media Storage / Signed_NDA folder
+        # Upload to contact in GHL + add NDA_Signed tag
+        logger.info("[NDA] Calling on_nda_signed: contact_id=%s file=%s", contact_id, filename)
         try:
-            upload_nda_to_ghl_media(str(filepath), filename, contact_id, contact)
-        except Exception as upload_err:
-            logger.exception("GHL media upload failed (local save succeeded): %s", upload_err)
+            on_nda_signed(contact_id, contact, str(filepath), filename)
+        except Exception as err:
+            logger.exception("GHL NDA post-sign actions failed (local save succeeded): %s", err)
         return f"inbound/nda_signed/{filename}"
     except OSError as e:
         logger.exception("Failed to write signed NDA to %s: %s", filepath, e)
@@ -507,6 +529,28 @@ def nda_page(request, contact_id):
     return render(request, 'inbound/nda_viewer.html', context)
 
 
+def nda_signed_pdf(request, filename):
+    """
+    Serve a signed NDA PDF file. Used for public links saved to GHL.
+    Replaces static URL so it works without static file serving.
+    """
+    if not filename or not filename.endswith('.pdf') or '..' in filename or '/' in filename:
+        return HttpResponse('Invalid filename', status=400)
+    if not re.match(r'^nda_signed_[\w\-]+\.pdf$', filename):
+        return HttpResponse('Invalid filename format', status=400)
+    save_dir = Path(settings.BASE_DIR) / "inbound" / "static" / "inbound" / "nda_signed"
+    filepath = save_dir / filename
+    if not filepath.exists() or not filepath.is_file():
+        return HttpResponse('File not found', status=404)
+    try:
+        pdf_bytes = filepath.read_bytes()
+    except OSError:
+        return HttpResponse('Error reading file', status=500)
+    resp = HttpResponse(pdf_bytes, content_type='application/pdf')
+    resp['Content-Disposition'] = f'inline; filename="{filename}"'
+    return resp
+
+
 @xframe_options_sameorigin
 def nda_pdf_stream(request, contact_id):
     """Return raw PDF bytes for embedding in viewer iframe."""
@@ -521,6 +565,7 @@ def nda_pdf_stream(request, contact_id):
 
 def nda_save(request, contact_id):
     """POST: save fillable field values. Accepts application/json (from PDF.js form) or form data."""
+    logger.info("[NDA] nda_save called: contact_id=%s method=%s content_type=%s", contact_id, request.method, request.content_type)
     if request.method != 'POST':
         return redirect('inbound:nda_page', contact_id=contact_id)
 
@@ -563,6 +608,7 @@ def nda_save(request, contact_id):
             contact.purchase_timeframe = get('timeframe')
         contact.raw_parsed = extra
         contact.save()
+        logger.info("[NDA] Calling _save_signed_nda_to_static (JSON branch)")
         _save_signed_nda_to_static(contact_id, contact)
         return JsonResponse({'ok': True, 'received_keys': list(data.keys())})
 
@@ -594,6 +640,7 @@ def nda_save(request, contact_id):
         contact.purchase_timeframe = request.POST.get('timeframe', '').strip()
     contact.raw_parsed = extra
     contact.save()
+    logger.info("[NDA] Calling _save_signed_nda_to_static (form POST branch)")
     _save_signed_nda_to_static(contact_id, contact)
     url = reverse('inbound:nda_page', kwargs={'contact_id': contact_id})
     return redirect(url + '?saved=1')
