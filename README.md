@@ -44,10 +44,32 @@ python manage.py runserver
 
 The SendGrid webhook URL will be:
 
-- **Local:** `http://localhost:8000/inbound/webhook/sendgrid/`
-- **Production:** `https://your-domain.com/inbound/webhook/sendgrid/`
+- **Local:** `http://localhost:8000/sendgrid/webhook/inbound/`
+- **Production:** `https://your-domain.com/sendgrid/webhook/inbound/`
 
 For local testing with SendGrid, use a tunnel (e.g. [ngrok](https://ngrok.com/)) so SendGrid can reach your machine.
+
+## manage.py commands
+
+| Command | Description |
+|---------|-------------|
+| `python manage.py migrate` | Run database migrations |
+| `python manage.py runserver` | Start the development server |
+| `python manage.py add_nda_form_fields` | Add fillable form fields to the NDA PDF template (see below) |
+
+### Updating the NDA PDF template
+
+The NDA viewer uses a fillable PDF at `inbound/static/inbound/NDA_Template.pdf`. To update or rebuild it:
+
+1. **Option A – Use a clean template at project root**  
+   Place your clean NDA PDF (no form fields) as `NDA_Template.pdf` in the project root. Then run:
+   ```bash
+   python manage.py add_nda_form_fields
+   ```
+   This copies the clean template into static, adds AcroForm fields (text inputs and dropdowns for ref_id, listing_id, listing_name, name, email, phone, etc.), and overwrites `inbound/static/inbound/NDA_Template.pdf`.
+
+2. **Option B – Use your own fillable PDF**  
+   Replace `inbound/static/inbound/NDA_Template.pdf` with your own fillable PDF (e.g. from Adobe Acrobat). Ensure field names match: `ref_id`, `listing_id`, `listing_name`, `name`, `email`, `cell`, `signature`, `street_address`, `city`, `state`, `zip`, and the choice fields (`will_manage`, `other_deciders`, `industry_experience`, etc.).    See `inbound/pdf_nda.py` for the full list.
 
 ## SendGrid Inbound Parse configuration
 
@@ -80,6 +102,15 @@ Each received email is parsed with the DeepSeek API to extract:
 Parsed data is stored on the same `InboundEmail` record and shown on the detail page (`/inbound/emails/<id>/`). The API key is read from the `DEEPSEEK_API_KEY` variable in your `.env` file.
 
 Extend `process_inbound_email()` in `inbound/views.py` to implement your GHL automation (e.g. create tasks, update contacts).
+
+## Signed NDA → GHL Media Storage
+
+When a user saves a signed NDA (clicks "Next Req" in the NDA viewer), the filled PDF is:
+
+1. Saved locally to `inbound/static/inbound/nda_signed/`
+2. Uploaded to **GHL Media Storage** in the `Signed_NDA` folder
+
+To enable uploads, ensure `GHL_API_KEY` and `GHL_LOCATION_ID` are set in `.env`. The folder name can be overridden with `GHL_SIGNED_NDA_FOLDER` (default: `Signed_NDA`). If the folder does not exist, it is created automatically.
 
 ## Security notes
 

@@ -21,16 +21,20 @@ PARSED_KEYS = (
 
 SYSTEM_PROMPT = """You are an assistant that extracts structured information from business-for-sale lead emails (e.g. BizBuySell, TangentBrokerage, BusinessesforSale.com).
 
-Given the email headers (From, Reply-To, Subject), body text, and any structured lines like "Lead For:", "Message:", "Amount to Invest:", "Purchase Timeframe:", "Phone:", "Email:", "Your Ref ID#:", extract the following into a JSON object.
+The LEAD is the person interested in buying the business (the inquiry). The email may be forwarded: the "From" header is the sender (e.g. forwarder), NOT necessarily the lead.
+
+IMPORTANT: Extract the lead's name and email from the BODY when present (e.g. "Name: Test Test", "Email: test123@gmail.com", "Contact Name:", "Lead Name:"). Do NOT use the From header for name/email when the body contains explicit lead fields. Only use From/Reply-To for name or email when the body does not contain them.
+
+Given the email headers (From, Reply-To, Subject), body text, and structured lines like "Name:", "Email:", "Phone:", "Lead For:", "Message:", "Amount to Invest:", "Purchase Timeframe:", "Your Ref ID#:", extract the following into a JSON object.
 
 Output a JSON object with exactly these keys (use empty string "" if not found; use null for listing_profit if not found):
 - lead_source: one of "BizBuySell", "TangentBrokerage.com", "BusinessesforSale.com" (infer from From address or domain, e.g. leads@bizbuysell.com -> BizBuySell)
 - listing_id: listing or reference number (e.g. "2344916" from "Listing# 2344916")
 - listing_name: the full listing name / "Lead For" line (e.g. "$539,384 Profit; 2 new large revenue streams w/recent FDA approval!")
 - listing_profit: numeric profit only, no currency (e.g. 539384 from "$539,384 Profit"), or null if not found
-- name: full name of the lead
-- email: email of the lead (often in Reply-To or "Email:" line)
-- phone: phone number
+- name: full name of the LEAD (person inquiring). Prefer value from body "Name:" or similar; do not use the From header sender name when body has a different name.
+- email: email of the LEAD. Prefer value from body "Email:" or similar; do not use From address when body has a different lead email.
+- phone: phone number of the lead (from body "Phone:" or similar)
 - purchase_timeframe: e.g. "3 to 6 Months", "ASAP"
 - amount_to_invest: e.g. "Not disclosed", "$500k", or exact text from email
 - lead_message: the full message body / inquiry text (the "Message:" section or main paragraph)

@@ -4,58 +4,122 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NDA — {{ listing_name|default:contact_id }}</title>
+  <title>NDA — {{ contact_id }}</title>
   <style>
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: #f0f0f0;
-      font-family: sans-serif;
+    body { margin: 0; height: 100vh; display: flex; flex-direction: column; font-family: system-ui, sans-serif; }
+    .pdf-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    #pdf-viewer-frame { flex: 1; width: 100%; border: none; background: #525659; }
+    .footerbar {
+      flex-shrink: 0;
+      background: #fff; border-top: 1px solid #ddd;
+      padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 -2px 8px rgba(0,0,0,0.1);
     }
-    /* Reference: Tupelo / react-pdf style – blue bar + content */
-    .page-wrap {
-      display: flex;
-      min-height: 100vh;
-      background: #fff;
+    .footerbar .req-left { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #333; }
+    .footerbar .req-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 26px; height: 26px; padding: 0 6px; background: #c00; color: #fff;
+      font-size: 13px; font-weight: bold; border-radius: 50%;
     }
-    .blue-bar {
-      width: 12px;
-      min-width: 12px;
-      background: #1e3a5f;
+    .footerbar .btn-next {
+      padding: 10px 20px; background: #2c2c2c; color: #fff; border: none;
+      font-size: 14px; cursor: pointer; border-radius: 4px;
     }
-    .content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
-    /* PDF container: fill space, no overflow scroll on page */
-    .pdf-container {
-      flex: 1;
-      position: relative;
-      overflow: auto;
-      background: #fff;
-    }
-    .pdf-container object,
-    .pdf-container iframe {
-      display: block;
-      width: 100%;
-      min-height: 100vh;
-      height: 100%;
-      border: none;
-    }
+    .footerbar .btn-next:hover { background: #1a1a1a; }
+    .footerbar .hint { font-size: 11px; color: #666; margin-left: 12px; }
   </style>
 </head>
 <body>
-  <div class="page-wrap">
-    <div class="blue-bar"></div>
-    <div class="content">
-      <div class="pdf-container">
-        <object data="{{ pdf_url }}" type="application/pdf" width="100%" height="100%">
-          <p>Your browser does not support PDF. <a href="{{ pdf_url }}">Download NDA.pdf</a>.</p>
-        </object>
-      </div>
-    </div>
+  <div class="pdf-wrap">
+    <iframe id="pdf-viewer-frame" src="{% static 'inbound/pdfjs/web/viewer.html' %}?file={{ pdf_url|urlencode }}" title="NDA PDF"></iframe>
   </div>
+  <div class="footerbar">
+    <div class="req-left">
+      Requirements left
+      <span class="req-badge" id="req-count">{{ requirements_count|default:0 }}</span>
+      <span class="hint">Fill the PDF form above, then click Next Req to save.</span>
+    </div>
+    <button type="button" class="btn-next" id="btn-next-req">Next Req &gt;</button>
+  </div>
+  <script>
+    (function() {
+      function getCookie(name) {
+        var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+        return match ? match[2] : null;
+      }
+      function collectPdfFormValues(container) {
+        container = container || document;
+        var values = {};
+        container.querySelectorAll(".annotationLayer input, .annotationLayer textarea, .annotationLayer select").forEach(function(el) {
+          var key = el.name || el.getAttribute("name") || el.id;
+          if (!key) return;
+          if (el.type === "checkbox") values[key] = el.checked;
+          else values[key] = el.value != null ? el.value : "";
+        });
+        return values;
+      }
+      async function submitNda() {
+        var iframe = document.getElementById("pdf-viewer-frame");
+        if (!iframe || !iframe.contentWindow) {
+          alert("PDF viewer not ready.");
+          return;
+        }
+        return new Promise(function(resolve, reject) {
+          var done = false;
+          function finish() {
+            if (done) return;
+            done = true;
+            window.removeEventListener("message", handler);
+          }
+          var handler = function(e) {
+            if (!e.data || !("formData" in e.data)) return;
+            finish();
+            var payload = e.data.formData || {};
+            if (e.data.error) {
+              reject(new Error(e.data.error));
+              return;
+            }
+            var saveUrl = "{{ save_url|escapejs }}";
+            var csrf = getCookie("csrftoken");
+            fetch(saveUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrf || "",
+                "Accept": "application/json"
+              },
+              body: JSON.stringify(payload),
+              credentials: "same-origin"
+            }).then(function(res) {
+              if (!res.ok) throw new Error("Save failed: " + res.status);
+              return res.json();
+            }).then(resolve).catch(reject);
+          };
+          window.addEventListener("message", handler);
+          iframe.contentWindow.postMessage({ action: "getFormData" }, "*");
+          setTimeout(function() {
+            if (!done) {
+              finish();
+              reject(new Error("Timeout waiting for form data from PDF viewer"));
+            }
+          }, 5000);
+        });
+      }
+      document.getElementById("btn-next-req").addEventListener("click", function() {
+        var btn = this;
+        btn.disabled = true;
+        submitNda().then(function(data) {
+          if (data && data.ok) {
+            window.location.reload();
+          }
+        }).catch(function(err) {
+          alert(err.message || "Save failed");
+        }).finally(function() {
+          btn.disabled = false;
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

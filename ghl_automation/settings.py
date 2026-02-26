@@ -17,7 +17,10 @@ SECRET_KEY = os.environ.get(
 
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('1', 'true', 'yes')
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,50.16.97.238').split(',')
+_allowed = os.environ.get('ALLOWED_HOSTS', '').strip()
+ALLOWED_HOSTS = _allowed.split(',') if _allowed else [
+    'localhost', '127.0.0.1', '.localhost', '0.0.0.0', '50.16.97.238',
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -95,6 +98,8 @@ GHL_CUSTOM_FIELD_LEAD_SOURCE = os.environ.get('GHL_CUSTOM_FIELD_LEAD_SOURCE', ''
 GHL_CUSTOM_FIELD_PURCHASE_TIMEFRAME = os.environ.get('GHL_CUSTOM_FIELD_PURCHASE_TIMEFRAME', '')
 GHL_CUSTOM_FIELD_AMOUNT_TO_INVEST = os.environ.get('GHL_CUSTOM_FIELD_AMOUNT_TO_INVEST', '')
 GHL_CUSTOM_FIELD_LEAD_MESSAGE = os.environ.get('GHL_CUSTOM_FIELD_LEAD_MESSAGE', '')
+# Media storage folder for signed NDAs (create in GHL if it doesn't exist)
+GHL_SIGNED_NDA_FOLDER = os.environ.get('GHL_SIGNED_NDA_FOLDER', 'Signed_NDA')
 
 # Allow larger inbound parse payloads (SendGrid "Send Raw" / big emails + attachments)
 # Increase if you receive very large emails (e.g. 25 * 1024 * 1024 for 25 MB)

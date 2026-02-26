@@ -45,11 +45,7 @@
                     <td>{{ e.name|default:"—" }}</td>
                     <td>{{ e.phone|default:"—" }}</td>
                     <td>{{ e.created|default:"—" }}</td>
-                    <td>
-                        <a href="{% url 'inbound:nda_form' e.contact_id %}?listing_id={{ e.listing_id|urlencode }}&listing_name={{ e.listing_name|urlencode }}">Form</a>
-                        |
-                        <a href="{% url 'inbound:nda_page' e.contact_id %}?listing_id={{ e.listing_id|urlencode }}&listing_name={{ e.listing_name|urlencode }}&created={{ e.created|urlencode }}">PDF</a>
-                    </td>
+                    <td><a href="{% url 'inbound:nda_page' e.contact_id %}?listing_id={{ e.listing_id|urlencode }}&listing_name={{ e.listing_name|urlencode }}">View NDA</a></td>
                 </tr>
                 {% endfor %}
             </tbody>

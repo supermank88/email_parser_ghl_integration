@@ -9,19 +9,25 @@ import email as email_module
 import json
 import logging
 import re
+from datetime import datetime
 from decimal import Decimal
 from email import policy
+from pathlib import Path
 
-from django.http import HttpResponse
+from django.conf import settings
+
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
 from .pdf_nda import fill_nda_pdf
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 from .models import InboundEmail
 from .parsing import parse_email_with_deepseek
-from .ghl import sync_contact_to_ghl
+from .ghl import sync_contact_to_ghl, upload_nda_to_ghl_media
 
 logger = logging.getLogger(__name__)
 
@@ -332,8 +338,12 @@ def process_inbound_email(payload, request):
                     'name', 'email', 'phone', 'purchase_timeframe', 'amount_to_invest',
                     'lead_message', 'ref_id', 'raw_parsed', 'parsed_at',
                 ])
-                # Sync to GoHighLevel only when we have lead data
+                # Sync to GoHighLevel only when we have lead data (requires listing_id + phone + lead_source)
                 try:
+                    logger.info(
+                        'Attempting GHL sync for email id=%s (listing_id=%r, phone=%r, lead_source=%r)',
+                        email.pk, email.listing_id, email.phone, email.lead_source,
+                    )
                     ghl_id = sync_contact_to_ghl(email)
                     if ghl_id:
                         email.ghl_contact_id = ghl_id[:64]
@@ -385,62 +395,208 @@ def nda_contacts_list(request):
     return render(request, 'inbound/nda_contacts.html', {'nda_entries': nda_entries})
 
 
-def nda_page(request, contact_id):
-    """
-    NDA as PDF only: pre-filled from the matched GHL contact. Reference: Tupelo-style viewer
-    (blue bar + embedded PDF with AcroForm fields).
-
-    URL: /nda/<contact_id>/?listing_id=...&listing_name=...&created=...
-    ?format=pdf returns raw PDF bytes; otherwise returns HTML viewer page that embeds the PDF.
-    """
+def _nda_pdf_response(contact_id, request):
+    """Build filled PDF bytes from contact and request GET params."""
     def _get(key, default=''):
         return request.GET.get(key, default) or default
-
     contact = InboundEmail.objects.filter(ghl_contact_id=contact_id).order_by('-received_at').first()
-    # Prefer contact, then GET params for all NDA fields so links can pre-fill everything
-    listing_id_val = (contact.listing_id if contact else '') or _get('listing_id')
-    listing_name_val = (contact.listing_name if contact else '') or _get('listing_name')
-    name_val = (contact.name if contact else '') or _get('name')
-    email_val = (contact.email if contact else '') or _get('email')
-    phone_val = (contact.phone if contact else '') or _get('phone')
-    ref_id_val = (contact.ref_id if contact else '') or _get('ref_id')
-    timeframe_val = (contact.purchase_timeframe if contact else '') or _get('purchase_timeframe')
-    amount_val = (contact.amount_to_invest if contact else '') or _get('amount_to_invest')
+    extra = (contact.raw_parsed or {}) if contact else {}
+    return fill_nda_pdf(
+        contact_id=contact_id,
+        listing_id=(contact.listing_id if contact else '') or _get('listing_id'),
+        listing_name=(contact.listing_name if contact else '') or _get('listing_name'),
+        name=(contact.name if contact else '') or _get('name'),
+        email=(contact.email if contact else '') or _get('email'),
+        phone=(contact.phone if contact else '') or _get('phone'),
+        ref_id=(contact.ref_id if contact else '') or _get('ref_id'),
+        street_address=extra.get('street_address', '') or _get('street_address'),
+        city=extra.get('city', '') or _get('city'),
+        state=extra.get('state', '') or _get('state'),
+        zip_code=extra.get('zip', '') or _get('zip_code'),
+        signature=extra.get('signature', '') or _get('signature'),
+        will_manage=extra.get('will_manage', '') or _get('will_manage'),
+        other_deciders=extra.get('other_deciders', '') or _get('other_deciders'),
+        industry_experience=extra.get('industry_experience', '') or _get('industry_experience'),
+        timeframe=(contact.purchase_timeframe if contact else '') or _get('purchase_timeframe'),
+        liquid_assets=extra.get('liquid_assets', '') or _get('liquid_assets'),
+        real_estate=extra.get('real_estate', '') or _get('real_estate'),
+        retirement_401k=extra.get('retirement_401k', '') or _get('retirement_401k'),
+        funds_for_business=(contact.amount_to_invest if contact else '') or _get('funds_for_business'),
+        partner_name=(contact.lead_message if contact else '') or _get('partner_name'),
+        using=extra.get('using', '') or _get('using'),
+        govt_affiliation=extra.get('govt_affiliation', '') or _get('govt_affiliation'),
+        govt_explain=extra.get('govt_explain', '') or _get('govt_explain'),
+    )
 
+
+def _save_signed_nda_to_static(contact_id, contact):
+    """
+    Generate filled NDA PDF from contact and save to inbound/static/inbound/nda_signed/.
+    Returns the saved file path (relative) or None on failure.
+    """
+    extra = (contact.raw_parsed or {}) if contact else {}
     try:
         pdf_bytes = fill_nda_pdf(
             contact_id=contact_id,
-            listing_id=listing_id_val,
-            listing_name=listing_name_val,
-            name=name_val,
-            email=email_val,
-            phone=phone_val,
-            ref_id=ref_id_val,
-            street_address=_get('street_address'),
-            city=_get('city'),
-            state=_get('state'),
-            zip_code=_get('zip_code'),
-            signature=_get('signature'),
-            will_manage=_get('will_manage'),
-            other_deciders=_get('other_deciders'),
-            industry_experience=_get('industry_experience'),
-            timeframe=timeframe_val,
-            liquid_assets=_get('liquid_assets'),
-            real_estate=_get('real_estate'),
-            retirement_401k=_get('retirement_401k'),
-            funds_for_business=amount_val or _get('funds_for_business'),
-            partner_name=_get('partner_name'),
-            using=_get('using'),
-            govt_affiliation=_get('govt_affiliation'),
-            govt_explain=_get('govt_explain'),
+            listing_id=(contact.listing_id if contact else '') or '',
+            listing_name=(contact.listing_name if contact else '') or '',
+            name=(contact.name if contact else '') or '',
+            email=(contact.email if contact else '') or '',
+            phone=(contact.phone if contact else '') or '',
+            ref_id=(contact.ref_id if contact else '') or '',
+            street_address=extra.get('street_address', ''),
+            city=extra.get('city', ''),
+            state=extra.get('state', ''),
+            zip_code=extra.get('zip', ''),
+            signature=extra.get('signature', ''),
+            will_manage=extra.get('will_manage', ''),
+            other_deciders=extra.get('other_deciders', ''),
+            industry_experience=extra.get('industry_experience', ''),
+            timeframe=(contact.purchase_timeframe if contact else '') or '',
+            liquid_assets=extra.get('liquid_assets', ''),
+            real_estate=extra.get('real_estate', ''),
+            retirement_401k=extra.get('retirement_401k', ''),
+            funds_for_business=extra.get('funds_for_business', '') or (contact.amount_to_invest if contact else '') or '',
+            partner_name=(contact.lead_message if contact else '') or '',
+            using=extra.get('using', ''),
+            govt_affiliation=extra.get('govt_affiliation', ''),
+            govt_explain=extra.get('govt_explain', ''),
         )
     except FileNotFoundError:
-        return HttpResponse('NDA template not found.', status=404)
+        logger.warning("NDA template not found; skipping save to static.")
+        return None
+    except Exception as e:
+        logger.exception("Failed to generate NDA PDF for save: %s", e)
+        return None
 
-    # PDF only: always return the filled PDF (reference: Tupelo-style form is the PDF AcroForm)
+    save_dir = Path(settings.BASE_DIR) / "inbound" / "static" / "inbound" / "nda_signed"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    safe_id = re.sub(r'[^\w\-]', '_', str(contact_id))[:80]
+    listing = re.sub(r'[^\w\-]', '_', (contact.listing_id or contact.listing_name or '')[:50])
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    name = "nda_signed" if not listing else f"nda_signed_{listing}"
+    filename = f"{name}_{safe_id}_{ts}.pdf"
+    filepath = save_dir / filename
+    try:
+        filepath.write_bytes(pdf_bytes)
+        logger.info("Saved signed NDA to %s", filepath)
+        # Upload to GHL Media Storage / Signed_NDA folder
+        try:
+            upload_nda_to_ghl_media(str(filepath), filename, contact_id, contact)
+        except Exception as upload_err:
+            logger.exception("GHL media upload failed (local save succeeded): %s", upload_err)
+        return f"inbound/nda_signed/{filename}"
+    except OSError as e:
+        logger.exception("Failed to write signed NDA to %s: %s", filepath, e)
+        return None
+
+
+def nda_page(request, contact_id):
+    """
+    Main NDA URL: HTML viewer with embedded PDF and footer bar (Requirements left + Next Req).
+    """
+    contact = InboundEmail.objects.filter(ghl_contact_id=contact_id).order_by('-received_at').first()
+    context = _nda_form_context(contact_id, contact)
+    if not contact and request.method == 'GET':
+        context['listing_id'] = request.GET.get('listing_id', '') or context.get('listing_id', '')
+        context['listing_name'] = request.GET.get('listing_name', '') or context.get('listing_name', '')
+    qs = request.GET.urlencode()
+    # Use relative URL for PDF so iframe loads from same origin (fixes port-forward/tunnel)
+    context['pdf_url'] = reverse('inbound:nda_pdf', kwargs={'contact_id': contact_id}) + ('?' + qs if qs else '')
+    context['save_url'] = reverse('inbound:nda_save', kwargs={'contact_id': contact_id})
+    return render(request, 'inbound/nda_viewer.html', context)
+
+
+@xframe_options_sameorigin
+def nda_pdf_stream(request, contact_id):
+    """Return raw PDF bytes for embedding in viewer iframe."""
+    try:
+        pdf_bytes = _nda_pdf_response(contact_id, request)
+    except FileNotFoundError:
+        return HttpResponse('NDA template not found.', status=404)
     resp = HttpResponse(pdf_bytes, content_type='application/pdf')
     resp['Content-Disposition'] = 'inline; filename="NDA.pdf"'
     return resp
+
+
+def nda_save(request, contact_id):
+    """POST: save fillable field values. Accepts application/json (from PDF.js form) or form data."""
+    if request.method != 'POST':
+        return redirect('inbound:nda_page', contact_id=contact_id)
+
+    if request.content_type and 'application/json' in request.content_type:
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except (ValueError, UnicodeDecodeError):
+            return JsonResponse({'ok': False, 'error': 'Invalid JSON'}, status=400)
+        def get(key, alt=None):
+            v = data.get(key) or (data.get(alt) if alt else None)
+            if v is None:
+                return ''
+            return (v.strip() if isinstance(v, str) else str(v).strip())
+        contact = InboundEmail.objects.filter(ghl_contact_id=contact_id).order_by('-received_at').first()
+        contact = contact or InboundEmail(
+            ghl_contact_id=contact_id,
+            from_address=get('email') or 'nda@local',
+            subject='NDA',
+        )
+        for key in (
+            'ref_id', 'listing_id', 'listing_name', 'name', 'email', 'phone',
+            'purchase_timeframe', 'amount_to_invest', 'lead_message',
+        ):
+            if key in data:
+                setattr(contact, key, get(key))
+        if 'partner_name' in data:
+            contact.lead_message = get('partner_name')
+        if 'cell' in data and 'phone' not in data:
+            contact.phone = get('cell')
+        extra = contact.raw_parsed or {}
+        extra_keys = (
+            'signature', 'street_address', 'city', 'state', 'zip',
+            'will_manage', 'other_deciders', 'industry_experience', 'govt_affiliation', 'govt_explain',
+            'liquid_assets', 'real_estate', 'retirement_401k', 'funds_for_business', 'using',
+        )
+        for key in extra_keys:
+            if key in data:
+                extra[key] = get(key)
+        if 'timeframe' in data and 'purchase_timeframe' not in data:
+            contact.purchase_timeframe = get('timeframe')
+        contact.raw_parsed = extra
+        contact.save()
+        _save_signed_nda_to_static(contact_id, contact)
+        return JsonResponse({'ok': True, 'received_keys': list(data.keys())})
+
+    # Form POST (fallback)
+    contact = InboundEmail.objects.filter(ghl_contact_id=contact_id).order_by('-received_at').first()
+    contact = contact or InboundEmail(
+        ghl_contact_id=contact_id,
+        from_address=request.POST.get('email', '') or 'nda@local',
+        subject='NDA',
+    )
+    for key in (
+        'ref_id', 'listing_id', 'listing_name', 'name', 'email', 'phone',
+        'purchase_timeframe', 'amount_to_invest', 'lead_message',
+    ):
+        if key in request.POST:
+            setattr(contact, key, request.POST.get(key, '').strip())
+    if 'partner_name' in request.POST:
+        contact.lead_message = request.POST.get('partner_name', '').strip()
+    extra = contact.raw_parsed or {}
+    extra_keys = (
+        'signature', 'street_address', 'city', 'state', 'zip',
+        'will_manage', 'other_deciders', 'industry_experience', 'govt_affiliation', 'govt_explain',
+        'liquid_assets', 'real_estate', 'retirement_401k', 'funds_for_business', 'using',
+    )
+    for key in extra_keys:
+        if key in request.POST:
+            extra[key] = request.POST.get(key, '').strip()
+    if 'timeframe' in request.POST and 'purchase_timeframe' not in request.POST:
+        contact.purchase_timeframe = request.POST.get('timeframe', '').strip()
+    contact.raw_parsed = extra
+    contact.save()
+    _save_signed_nda_to_static(contact_id, contact)
+    url = reverse('inbound:nda_page', kwargs={'contact_id': contact_id})
+    return redirect(url + '?saved=1')
 
 
 # Required NDA fields for "Requirements left" count (empty = 1 requirement)
@@ -507,38 +663,3 @@ def _nda_form_context(contact_id, contact):
     return data
 
 
-def nda_form_page(request, contact_id):
-    """
-    NDA as HTML form with footer bar: "Requirements left" + "Next Req" submit.
-    GET: show form with current contact data and requirements count.
-    POST: update InboundEmail with form data, redirect back so UI shows updated values.
-    """
-    contact = InboundEmail.objects.filter(ghl_contact_id=contact_id).order_by('-received_at').first()
-    if request.method == 'POST':
-        contact = contact or InboundEmail(
-            ghl_contact_id=contact_id,
-            from_address=request.POST.get('email', '') or 'nda-form@local',
-            subject='NDA form',
-        )
-        # Update from POST (only fields that exist on InboundEmail)
-        for key in (
-            'ref_id', 'listing_id', 'listing_name', 'name', 'email', 'phone',
-            'purchase_timeframe', 'amount_to_invest', 'lead_message',
-        ):
-            if key in request.POST:
-                setattr(contact, key, request.POST.get(key, '').strip())
-        if 'partner_name' in request.POST:
-            contact.lead_message = request.POST.get('partner_name', '').strip()
-        # Optional: store extra NDA fields in raw_parsed for pre-fill later
-        extra = contact.raw_parsed or {}
-        for key in ('signature', 'street_address', 'city', 'state', 'zip', 'will_manage', 'other_deciders', 'industry_experience', 'govt_affiliation', 'govt_explain'):
-            if key in request.POST:
-                extra[key] = request.POST.get(key, '').strip()
-        contact.raw_parsed = extra
-        contact.save()
-        return redirect('inbound:nda_form', contact_id=contact_id)
-    context = _nda_form_context(contact_id, contact)
-    if not contact and request.method == 'GET':
-        context['listing_id'] = request.GET.get('listing_id', '') or context.get('listing_id', '')
-        context['listing_name'] = request.GET.get('listing_name', '') or context.get('listing_name', '')
-    return render(request, 'inbound/nda.html', context)
